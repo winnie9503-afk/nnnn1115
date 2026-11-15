@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>無損原始畫質影片上傳平台</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Google Fonts (Noto Sans TC & Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- 引入 FontAwesome 圖示庫 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #0f172a; /* 深藍灰背景，突顯影片畫質 */
+            color: #f8fafc;
+        }
+        /* 自訂捲軸樣式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        /* 拖曳區域動畫 */
+        .drag-active {
+            border-color: #38bdf8 !important;
+            background-color: rgba(56, 189, 248, 0.1) !important;
+            transform: scale(1.01);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between antialiased selection:bg-sky-500 selection:text-white">
+
+    <!-- 頂部導覽列 -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+                    <i class="fa-solid fa-film text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight text-white">RawStream 無損影音傳輸</h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">100% 保留原始位元率與解析度 • 零壓縮處理</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <span id="connection-status-badge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
+                    無損共用庫連線中
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main class="flex-grow max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+        
+        <!-- 提示訊息框 (取代 alert) -->
+        <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+        <!-- 上傳端主容器 -->
+        <div id="sender-wrapper">
+        <!-- 標題與說明 -->
+        <div class="text-center max-w-2xl mx-auto mb-8">
+            <h2 class="text-2xl sm:text-3xl font-bold text-white mb-3">上傳您的原始高畫質影片</h2>
+            <p class="text-slate-400 text-sm sm:text-base leading-relaxed">
+                本系統採用二進位原始檔案流（Raw File Stream）讀取技術，絕不在瀏覽器端進行任何轉碼或畫質壓縮，完整保留 4K / 8K、60fps 與 HDR 原始細節。
+            </p>
+        </div>
+
+        <!-- 上傳拖放區 (初始顯示) -->
+        <div id="upload-zone" class="relative group cursor-pointer rounded-2xl border-2 border-dashed border-slate-700 bg-slate-800/40 hover:bg-slate-800/70 hover:border-sky-500/70 transition-all duration-300 p-8 sm:p-14 text-center shadow-xl">
+            <input type="file" id="file-input" accept="video/*" class="hidden">
+            
+            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center group-hover:scale-110 group-hover:border-sky-500/50 transition-transform duration-300 shadow-inner">
+                <i class="fa-solid fa-cloud-arrow-up text-2xl text-sky-400"></i>
+            </div>
+            
+            <h3 class="text-lg sm:text-xl font-semibold text-white mb-2">點擊選擇影片，或將檔案拖曳至此處</h3>
+            <p class="text-sm text-slate-400 mb-6">支援 MP4, MOV, MKV, WebM, AVI 等所有原始影片格式（無檔案大小限制）</p>
+            
+            <button type="button" id="select-btn" class="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-sky-500 hover:bg-sky-400 active:bg-sky-600 transition-colors shadow-lg shadow-sky-500/25">
+                <i class="fa-solid fa-folder-open mr-2"></i> 瀏覽本機檔案
+            </button>
+        </div>
+
+        <!-- 影片預覽與規格資訊區 (選擇檔案後顯示) -->
+        <div id="preview-section" class="hidden space-y-6 animate-fade-in">
+            
+            <!-- 原始畫質播放器卡片 -->
+            <div class="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-2xl">
+                <div class="bg-slate-950 relative flex items-center justify-center aspect-video max-h-[65vh]">
+                    <!-- 影片元件：直接綁定本地原始 ObjectURL，確保零畫質損失 -->
+                    <video id="video-player" controls playsinline class="w-full h-full object-contain"></video>
+                </div>
+                
+                <!-- 檔案資訊與操作列 -->
+                <div class="p-5 sm:p-6 bg-slate-900 border-t border-slate-800">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center space-x-2 mb-1">
+                                <span class="px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                                    原始母帶畫質
+                                </span>
+                                <span id="video-mime" class="text-xs text-slate-400 font-mono">video/mp4</span>
+                            </div>
+                            <h3 id="video-name" class="text-lg font-bold text-white truncate" title="影片名稱">video_filename.mp4</h3>
+                        </div>
+                        
+                        <div class="flex items-center space-x-3 shrink-0">
+                            <button type="button" id="change-file-btn" class="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors">
+                                <i class="fa-solid fa-rotate mr-1.5"></i> 更換影片
+                            </button>
+                            <button type="button" id="start-upload-btn" class="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 transition-all shadow-lg shadow-sky-500/25">
+                                <i class="fa-solid fa-paper-plane mr-1.5"></i> 確認無損上傳
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 原始媒體數據儀表板 -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                        <div class="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                            <div class="text-xs text-slate-400 mb-1 flex items-center">
+                                <i class="fa-solid fa-expand text-sky-400 mr-1.5"></i> 原始解析度
+                            </div>
+                            <div id="meta-resolution" class="text-base sm:text-lg font-bold text-white font-mono">讀取中...</div>
+                        </div>
+                        
+                        <div class="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                            <div class="text-xs text-slate-400 mb-1 flex items-center">
+                                <i class="fa-solid fa-hard-drive text-indigo-400 mr-1.5"></i> 原始檔案大小
+                            </div>
+                            <div id="meta-size" class="text-base sm:text-lg font-bold text-white font-mono">0 MB</div>
+                        </div>
+
+                        <div class="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                            <div class="text-xs text-slate-400 mb-1 flex items-center">
+                                <i class="fa-regular fa-clock text-emerald-400 mr-1.5"></i> 影片總長度
+                            </div>
+                            <div id="meta-duration" class="text-base sm:text-lg font-bold text-white font-mono">00:00</div>
+                        </div>
+
+                        <div class="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                            <div class="text-xs text-slate-400 mb-1 flex items-center">
+                                <i class="fa-solid fa-gauge-high text-amber-400 mr-1.5"></i> 平均位元率 (Bitrate)
+                            </div>
+                            <div id="meta-bitrate" class="text-base sm:text-lg font-bold text-white font-mono">計算中...</div>
+                        </div>
+                    </div>
+
+                    <!-- 上傳進度條區塊 (點擊上傳後顯示) -->
+                    <div id="upload-progress-container" class="hidden mt-6 pt-6 border-t border-slate-800">
+                        <div class="flex justify-between items-center mb-2">
+                            <span id="upload-status-text" class="text-sm font-medium text-sky-400 flex items-center">
+                                <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> 正在以原始二進位流傳輸至伺服器...
+                            </span>
+                            <span id="upload-percent" class="text-sm font-bold text-white font-mono">0%</span>
+                        </div>
+                        <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                            <div id="upload-progress-bar" class="h-full bg-gradient-to-r from-sky-400 to-indigo-500 rounded-full transition-all duration-200" style="width: 0%"></div>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-2">
+                            <i class="fa-solid fa-shield-halved mr-1"></i> 傳輸過程已跳過 Canvas 重新渲染與前端壓縮演算法，確保 MD5 雜湊值與原始檔案完全一致。
+                        </p>
+                    </div>
+
+                    <!-- 無損分享連結與下載區塊 (上傳完成後顯示) -->
+                    <div id="share-download-container" class="hidden mt-6 pt-6 border-t border-slate-800 animate-fade-in">
+                        <div class="p-4 sm:p-5 rounded-xl bg-emerald-950/25 border border-emerald-500/30">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                                <div>
+                                    <h4 class="text-base font-bold text-emerald-400 flex items-center">
+                                        <i class="fa-solid fa-link mr-2"></i> 專屬無損分享連結已就緒
+                                    </h4>
+                                    <p class="text-xs text-slate-400 mt-1">
+                                        任何知道此連結的人皆可存取並下載 100% 原始畫質母帶檔案。
+                                    </p>
+                                </div>
+                                <!-- 直接無損下載按鈕 -->
+                                <a id="direct-download-btn" href="#" download="" class="inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 active:bg-emerald-500 transition-colors shadow-lg shadow-emerald-500/20 shrink-0">
+                                    <i class="fa-solid fa-download mr-2"></i> 下載原始高畫質影片
+                                </a>
+                            </div>
+
+                            <!-- 分享網址複製列 -->
+                            <div class="flex items-center space-x-2">
+                                <input type="text" id="share-link-input" readonly class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm font-mono text-slate-200 focus:outline-none">
+                                <button type="button" id="copy-link-btn" class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors shrink-0">
+                                    <i class="fa-regular fa-copy mr-1.5"></i> 複製連結
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 共用影音庫列表區 (所有打開網頁的人皆可看到大家上傳的影片) -->
+        <section id="shared-gallery-section" class="mt-14 pt-10 border-t border-slate-800/80">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center">
+                        <i class="fa-solid fa-photo-film text-sky-400 mr-2.5"></i> 共用無損影音庫
+                        <span id="gallery-count-badge" class="ml-2.5 px-2.5 py-0.5 text-xs font-mono rounded-full bg-slate-800 text-slate-300 border border-slate-700">0 部影片</span>
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-1">所有取得此網頁連結的朋友皆可即時瀏覽並下載 100% 原始畫質檔案。</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <input type="text" id="gallery-search-input" placeholder="搜尋影片檔名..." class="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500 w-full sm:w-56">
+                </div>
+            </div>
+
+            <!-- 尚未填入寫死金鑰時的開發者提醒卡片 (填入 SITE_CONFIG 後會自動隱藏) -->
+            <div id="gallery-setup-prompt" class="p-8 rounded-2xl bg-slate-900/60 border border-dashed border-amber-500/40 text-center space-y-2">
+                <div class="w-12 h-12 mx-auto rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
+                    <i class="fa-solid fa-code text-xl"></i>
+                </div>
+                <h4 class="text-base font-bold text-white">站長提醒：請先於程式碼頂部填入 API 金鑰</h4>
+                <p class="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
+                    請打開此 HTML 檔案，在 <code class="text-amber-300 bg-slate-800 px-1.5 py-0.5 rounded">SITE_CONFIG</code> 區塊填入您的 Cloudinary 與 Firebase 設定再上傳至 GitHub，之後所有朋友打開網頁即可直接免設定使用。
+                </p>
+            </div>
+
+            <!-- 影片卡片網格列表 -->
+            <div id="shared-video-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <!-- 動態插入影片卡片 -->
+            </div>
+
+            <!-- 無影片時的空狀態 -->
+            <div id="gallery-empty-state" class="hidden p-10 rounded-2xl bg-slate-900/40 border border-slate-800 text-center">
+                <p class="text-sm text-slate-400">目前共用影音庫還沒有任何影片，成為第一位上傳高畫質影片的人吧！</p>
+            </div>
+        </section>
+
+        </div> <!-- 結束 sender-wrapper -->
+    </main>
+
+    <!-- 頁尾 -->
+    <footer class="border-t border-slate-800/80 py-6 text-center text-xs text-slate-500">
+        <p>RawStream 無損高畫質影音共用平台 • 100% 原始母帶畫質保留</p>
+    </footer>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // =========================================================================
+        // 【站長寫死設定區】發佈到 GitHub Pages 前，請將您的兩組免費設定貼在這裡！
+        // 填好後上傳到 GitHub，所有朋友打開網頁就能直接上傳與下載，無需任何額外操作。
+        // =========================================================================
+        const SITE_CONFIG = {
+            // 1. Cloudinary 設定（存放無損原始影片，需將 Upload Preset 設為 Unsigned）
+            cloudinaryCloudName: "請填入您的_CLOUD_NAME",
+            cloudinaryUploadPreset: "請填入您的_UPLOAD_PRESET",
+
+            // 2. Firebase 設定（同步顯示大家的影片清單，請貼上 firebaseConfig 物件）
+            firebaseConfig: {
+                apiKey: "請填入您的_API_KEY",
+                authDomain: "請填入您的_PROJECT_ID.firebaseapp.com",
+                projectId: "請填入您的_PROJECT_ID",
+                storageBucket: "請填入您的_PROJECT_ID.appspot.com",
+                messagingSenderId: "請填入您的_SENDER_ID",
+                appId: "請填入您的_APP_ID"
+            }
+        };
+
+        // DOM 元素選取
+        const uploadZone = document.getElementById('upload-zone');
+        const fileInput = document.getElementById('file-input');
+        const selectBtn = document.getElementById('select-btn');
+        const previewSection = document.getElementById('preview-section');
+        const videoPlayer = document.getElementById('video-player');
+        
+        // 資訊顯示元素
+        const videoNameEl = document.getElementById('video-name');
+        const videoMimeEl = document.getElementById('video-mime');
+        const metaResolutionEl = document.getElementById('meta-resolution');
+        const metaSizeEl = document.getElementById('meta-size');
+        const metaDurationEl = document.getElementById('meta-duration');
+        const metaBitrateEl = document.getElementById('meta-bitrate');
+
+        // 操作按鈕與進度條
+        const changeFileBtn = document.getElementById('change-file-btn');
+        const startUploadBtn = document.getElementById('start-upload-btn');
+        const uploadProgressContainer = document.getElementById('upload-progress-container');
+        const uploadProgressBar = document.getElementById('upload-progress-bar');
+        const uploadPercentEl = document.getElementById('upload-percent');
+        const uploadStatusText = document.getElementById('upload-status-text');
+
+        // 分享與下載元素
+        const shareDownloadContainer = document.getElementById('share-download-container');
+        const shareLinkInput = document.getElementById('share-link-input');
+        const copyLinkBtn = document.getElementById('copy-link-btn');
+        const directDownloadBtn = document.getElementById('direct-download-btn');
+
+        // 共用影音庫 DOM 元素
+        const gallerySetupPrompt = document.getElementById('gallery-setup-prompt');
+        const sharedVideoGrid = document.getElementById('shared-video-grid');
+        const galleryEmptyState = document.getElementById('gallery-empty-state');
+        const galleryCountBadge = document.getElementById('gallery-count-badge');
+        const gallerySearchInput = document.getElementById('gallery-search-input');
+        const statusBadge = document.getElementById('connection-status-badge');
+
+        // 狀態變數
+        let currentFile = null;
+        let currentObjectUrl = null;
+        let currentVideoMeta = { resolution: '未知', durationStr: '00:00', bitrateStr: '未知' };
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let allSharedVideos = [];
+
+        // 檢查是否已填入真實金鑰
+        const isCloudinaryConfigured = SITE_CONFIG.cloudinaryCloudName && !SITE_CONFIG.cloudinaryCloudName.includes('請填入');
+        let activeFirebaseConfig = (SITE_CONFIG.firebaseConfig && SITE_CONFIG.firebaseConfig.apiKey && !SITE_CONFIG.firebaseConfig.apiKey.includes('請填入'))
+            ? SITE_CONFIG.firebaseConfig
+            : null;
+
+        // 支援測試預覽環境自動注入設定
+        if (!activeFirebaseConfig && typeof __firebase_config !== 'undefined') {
+            try {
+                activeFirebaseConfig = JSON.parse(__firebase_config);
+            } catch (e) {}
+        }
+
+        /**
+         * 初始化 Firebase 並即時監聽共用影片清單
+         */
+        async function initSharedGallery(fbConfig) {
+            if (!fbConfig) {
+                statusBadge.className = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 mr-1.5"></span> 等待站長填入設定';
+                return;
+            }
+            try {
+                const app = initializeApp(fbConfig, 'RawStreamGallery');
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                currentUser = auth.currentUser;
+                if (!currentUser) return;
+
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'rawstream-shared-gallery';
+                const videosCol = collection(db, 'artifacts', appId, 'public', 'data', 'shared_videos');
+
+                gallerySetupPrompt.classList.add('hidden');
+                statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span> 共用影音庫已連線';
+
+                // 即時監聽所有上傳的影片（不加複雜查詢，於記憶體中排序）
+                onSnapshot(videosCol, (snapshot) => {
+                    const list = [];
+                    snapshot.forEach((docSnap) => {
+                        list.push({ id: docSnap.id, ...docSnap.data() });
+                    });
+                    list.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+                    allSharedVideos = list;
+                    renderSharedGallery(list);
+                }, (error) => {
+                    console.error('讀取共用清單失敗:', error);
+                    showToast('讀取共用清單發生錯誤，請檢查 Firestore 權限規則', 'error');
+                });
+            } catch (err) {
+                console.error('Firebase 初始化失敗:', err);
+                showToast('Firebase 金鑰設定有誤，請檢查 SITE_CONFIG', 'error');
+            }
+        }
+
+        /**
+         * 渲染共用影音庫卡片網格
+         */
+        function renderSharedGallery(videos) {
+            const keyword = gallerySearchInput.value.trim().toLowerCase();
+            const filtered = keyword 
+                ? videos.filter(v => (v.name || '').toLowerCase().includes(keyword))
+                : videos;
+
+            galleryCountBadge.textContent = `${filtered.length} 部影片`;
+
+            if (filtered.length === 0) {
+                sharedVideoGrid.classList.add('hidden');
+                galleryEmptyState.classList.remove('hidden');
+                return;
+            }
+
+            galleryEmptyState.classList.add('hidden');
+            sharedVideoGrid.classList.remove('hidden');
+            sharedVideoGrid.innerHTML = '';
+
+            filtered.forEach((video) => {
+                const dateStr = video.createdAtMs 
+                    ? new Date(video.createdAtMs).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : '剛剛';
+
+                const card = document.createElement('div');
+                card.className = 'rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-lg flex flex-col justify-between hover:border-sky-500/40 transition-all';
+                card.innerHTML = `
+                    <div>
+                        <div class="bg-slate-950 aspect-video relative group">
+                            <video src="${video.url}" preload="metadata" controls playsinline class="w-full h-full object-contain"></video>
+                            <span class="absolute top-2.5 left-2.5 px-2 py-0.5 text-[10px] font-bold rounded bg-slate-900/85 text-sky-400 border border-sky-500/30 backdrop-blur-sm pointer-events-none">
+                                ${video.resolution || '原始畫質'}
+                            </span>
+                        </div>
+                        <div class="p-4">
+                            <h4 class="text-sm font-bold text-white truncate mb-1" title="${video.name}">${video.name}</h4>
+                            <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                                <span><i class="fa-solid fa-hard-drive mr-1 text-indigo-400"></i>${video.sizeStr || '未知大小'}</span>
+                                <span><i class="fa-regular fa-clock mr-1 text-emerald-400"></i>${video.durationStr || '--:--'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="px-4 pb-4 pt-2 border-t border-slate-800/70 flex items-center justify-between gap-2">
+                        <span class="text-[11px] text-slate-500 truncate">上傳於 ${dateStr}</span>
+                        <div class="flex items-center space-x-1.5 shrink-0">
+                            <button type="button" data-url="${video.url}" class="copy-item-btn p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors" title="複製直連網址">
+                                <i class="fa-regular fa-copy"></i>
+                            </button>
+                            <a href="${video.url}" download="${video.name}" target="_blank" rel="noopener" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 transition-colors">
+                                <i class="fa-solid fa-download mr-1.5"></i> 下載原檔
+                            </a>
+                        </div>
+                    </div>
+                `;
+                sharedVideoGrid.appendChild(card);
+            });
+
+            document.querySelectorAll('.copy-item-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const url = btn.getAttribute('data-url');
+                    const tempInput = document.createElement('input');
+                    tempInput.value = url;
+                    document.body.appendChild(tempInput);
+                    tempInput.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tempInput);
+                    showToast('已複製該部影片的原始下載網址！', 'success');
+                });
+            });
+        }
+
+        gallerySearchInput.addEventListener('input', () => renderSharedGallery(allSharedVideos));
+
+        /**
+         * 顯示自訂提示訊息 (取代原生 alert)
+         */
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                info: 'bg-slate-800 border-sky-500/50 text-white',
+                success: 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200',
+                error: 'bg-rose-950/90 border-rose-500/50 text-rose-200'
+            };
+            
+            const icons = {
+                info: 'fa-circle-info text-sky-400',
+                success: 'fa-circle-check text-emerald-400',
+                error: 'fa-triangle-exclamation text-rose-400'
+            };
+
+            toast.className = `pointer-events-auto flex items-center space-x-3 px-4 py-3 rounded-xl border shadow-xl backdrop-blur-md transition-all duration-300 transform translate-y-2 opacity-0 ${colors[type]}`;
+            toast.innerHTML = `
+                <i class="fa-solid ${icons[type]} text-lg"></i>
+                <span class="text-sm font-medium">${message}</span>
+            `;
+
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatDuration(seconds) {
+            if (isNaN(seconds) || seconds === Infinity) return '00:00';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            if (h > 0) {
+                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function handleFileSelect(file) {
+            if (!file) return;
+            if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|mov|mkv|avi|webm|flv|wmv|m4v)$/i)) {
+                showToast('請選擇有效的影片檔案！', 'error');
+                return;
+            }
+
+            if (currentObjectUrl) {
+                URL.revokeObjectURL(currentObjectUrl);
+            }
+
+            currentFile = file;
+            currentObjectUrl = URL.createObjectURL(file);
+
+            videoNameEl.textContent = file.name;
+            videoNameEl.title = file.name;
+            videoMimeEl.textContent = file.type || 'video/raw';
+            metaSizeEl.textContent = formatBytes(file.size);
+            
+            metaResolutionEl.textContent = '解析中...';
+            metaDurationEl.textContent = '解析中...';
+            metaBitrateEl.textContent = '計算中...';
+            uploadProgressContainer.classList.add('hidden');
+            shareDownloadContainer.classList.add('hidden');
+            uploadProgressBar.style.width = '0%';
+            uploadPercentEl.textContent = '0%';
+            startUploadBtn.disabled = false;
+            startUploadBtn.innerHTML = '<i class="fa-solid fa-paper-plane mr-1.5"></i> 確認無損上傳';
+
+            videoPlayer.src = currentObjectUrl;
+
+            uploadZone.classList.add('hidden');
+            previewSection.classList.remove('hidden');
+
+            showToast('已載入原始高畫質檔案，未進行任何壓縮', 'info');
+        }
+
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            const width = videoPlayer.videoWidth;
+            const height = videoPlayer.videoHeight;
+            const duration = videoPlayer.duration;
+
+            let qualityLabel = '';
+            if (width >= 7680 || height >= 4320) qualityLabel = ' (8K UHD)';
+            else if (width >= 3840 || height >= 2160) qualityLabel = ' (4K UHD)';
+            else if (width >= 2560 || height >= 1440) qualityLabel = ' (2K QHD)';
+            else if (width >= 1920 || height >= 1080) qualityLabel = ' (1080p FHD)';
+
+            const resText = `${width} × ${height}${qualityLabel}`;
+            const durText = formatDuration(duration);
+            let bitText = '未知';
+
+            metaResolutionEl.textContent = resText;
+            metaDurationEl.textContent = durText;
+
+            if (currentFile && duration > 0) {
+                const bitrateMbps = ((currentFile.size * 8) / duration) / 1000000;
+                bitText = `${bitrateMbps.toFixed(2)} Mbps`;
+                metaBitrateEl.textContent = bitText;
+            }
+
+            currentVideoMeta = { resolution: resText, durationStr: durText, bitrateStr: bitText };
+        });
+
+        selectBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInput.click();
+        });
+
+        uploadZone.addEventListener('click', () => fileInput.click());
+        changeFileBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, () => uploadZone.classList.add('drag-active'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, () => uploadZone.classList.remove('drag-active'), false);
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            if (dt.files && dt.files.length > 0) {
+                handleFileSelect(dt.files[0]);
+            }
+        });
+
+        /**
+         * 執行無損上傳流程 (直接讀取寫死的 SITE_CONFIG)
+         */
+        startUploadBtn.addEventListener('click', () => {
+            if (!currentFile) return;
+
+            if (!isCloudinaryConfigured) {
+                showToast('尚未在程式碼 SITE_CONFIG 填入 Cloudinary 金鑰，無法上傳至雲端！', 'error');
+                return;
+            }
+
+            startUploadBtn.disabled = true;
+            startUploadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> 上傳中...';
+            
+            uploadProgressContainer.classList.remove('hidden');
+            uploadStatusText.className = 'text-sm font-medium text-sky-400 flex items-center';
+            uploadStatusText.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> 正在以 Raw 無損模式上傳至雲端並同步至共用庫...';
+            
+            const formData = new FormData();
+            formData.append('file', currentFile);
+            formData.append('upload_preset', SITE_CONFIG.cloudinaryUploadPreset);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `https://api.cloudinary.com/v1_1/${SITE_CONFIG.cloudinaryCloudName}/raw/upload`, true);
+
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    uploadProgressBar.style.width = `${percent}%`;
+                    uploadPercentEl.textContent = `${percent}%`;
+                }
+            };
+
+            xhr.onload = async () => {
+                if (xhr.status === 200) {
+                    const res = JSON.parse(xhr.responseText);
+                    const videoUrl = res.secure_url;
+
+                    // 自動將此影片加入 Firebase 共用影音庫
+                    if (db && currentUser) {
+                        try {
+                            const appId = typeof __app_id !== 'undefined' ? __app_id : 'rawstream-shared-gallery';
+                            const videosCol = collection(db, 'artifacts', appId, 'public', 'data', 'shared_videos');
+                            await addDoc(videosCol, {
+                                name: currentFile.name,
+                                url: videoUrl,
+                                sizeStr: formatBytes(currentFile.size),
+                                resolution: currentVideoMeta.resolution,
+                                durationStr: currentVideoMeta.durationStr,
+                                bitrateStr: currentVideoMeta.bitrateStr,
+                                uploaderUid: currentUser.uid,
+                                createdAtMs: Date.now()
+                            });
+                        } catch (dbErr) {
+                            console.error('寫入共用清單失敗:', dbErr);
+                        }
+                    }
+
+                    uploadProgressBar.style.width = '100%';
+                    uploadPercentEl.textContent = '100%';
+                    uploadStatusText.className = 'text-sm font-medium text-emerald-400 flex items-center';
+                    uploadStatusText.innerHTML = '<i class="fa-solid fa-circle-check mr-2"></i> 雲端無損上傳完成！已同步發布至下方共用影音庫。';
+                    startUploadBtn.innerHTML = '<i class="fa-solid fa-check mr-1.5"></i> 已發布至共用庫';
+                    
+                    shareLinkInput.value = videoUrl;
+                    directDownloadBtn.href = videoUrl;
+                    directDownloadBtn.download = currentFile.name;
+                    shareDownloadContainer.classList.remove('hidden');
+                    showToast('影片已無損上傳並發布至共用影音庫！', 'success');
+                } else {
+                    startUploadBtn.disabled = false;
+                    startUploadBtn.innerHTML = '<i class="fa-solid fa-paper-plane mr-1.5"></i> 重新上傳';
+                    uploadStatusText.className = 'text-sm font-medium text-rose-400 flex items-center';
+                    uploadStatusText.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-2"></i> 雲端上傳失敗，請檢查 Cloudinary 設定是否為 Unsigned。';
+                    showToast('雲端上傳失敗，請確認 API 設定', 'error');
+                }
+            };
+
+            xhr.onerror = () => {
+                startUploadBtn.disabled = false;
+                startUploadBtn.innerHTML = '<i class="fa-solid fa-paper-plane mr-1.5"></i> 重新上傳';
+                showToast('網路連線錯誤，無法連線至雲端伺服器', 'error');
+            };
+
+            xhr.send(formData);
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initSharedGallery(activeFirebaseConfig);
+        });
+
+        copyLinkBtn.addEventListener('click', () => {
+            shareLinkInput.select();
+            shareLinkInput.setSelectionRange(0, 99999);
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    const originalHtml = copyLinkBtn.innerHTML;
+                    copyLinkBtn.innerHTML = '<i class="fa-solid fa-check text-emerald-400 mr-1.5"></i> 已複製';
+                    showToast('分享連結已複製到剪貼簿！任何拿到連結的人皆可下載原始畫質。', 'success');
+                    
+                    setTimeout(() => {
+                        copyLinkBtn.innerHTML = originalHtml;
+                    }, 2000);
+                } else {
+                    showToast('複製失敗，請手動選取網址複製', 'error');
+                }
+            } catch (err) {
+                showToast('複製失敗，請手動選取網址複製', 'error');
+            }
+        });
+    </script>
+</body>
+</html>
